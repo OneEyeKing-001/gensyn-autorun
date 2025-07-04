@@ -34,6 +34,7 @@ EOF
 declare -a FATAL_ERRORS=(
     "ValueError: expected sequence of length 2 at dim 1"
     "Exception occurred during game run"
+    "An error was detected while running rl-swarm"
     "Traceback (most recent call last):"
     "RuntimeError:"
 )

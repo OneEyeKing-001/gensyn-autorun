@@ -5,33 +5,37 @@ LOG_FILE="/root/rl_watchdog.log"
 ERROR_LOG="/root/rl_swarm_error.log"
 CHECK_LOG="/root/rl-swarm/console.log"
 
-RESTART_COMMAND='
-# Patch hivemind startup timeout
-sed -i "s/startup_timeout: float = *15/startup_timeout: float = 120/" ~/rl-swarm/.venv/lib/python3.12/site-packages/hivemind/p2p/p2p_daemon.py
-
-# Start RL Swarm in tmux with expect
-tmux new-session -d -s rl_swarm "cd ~/rl-swarm && python3 -m venv .venv && source .venv/bin/activate && chmod +x run_rl_swarm.sh && expect -c \'
+RESTART_COMMAND=$(cat << 'EOF'
+sed -i 's/startup_timeout: float = *15/startup_timeout: float = 120/' ~/rl-swarm/.venv/lib/python3.12/site-packages/hivemind/p2p/p2p_daemon.py
+tmux new-session -d -s rl_swarm bash -c '
+cd ~/rl-swarm
+python3 -m venv .venv
+source .venv/bin/activate
+chmod +x run_rl_swarm.sh
+expect << EOD
 spawn ./run_rl_swarm.sh
 expect {
-    \\"Would you like to push models you train in the RL swarm to the Hugging Face Hub?*\\" {
-        send \\"n\\\\r\\"
+    "Would you like to push models you train in the RL swarm to the Hugging Face Hub?" {
+        send "n\r"
         exp_continue
     }
-    \\"Enter the name of the model you want to use\\" {
-        send \\"Gensyn/Qwen2.5-0.5B-Instruct\\\\r\\"
+    "Enter the name of the model you want to use" {
+        send "Gensyn/Qwen2.5-0.5B-Instruct\r"
     }
     eof
 }
-\'"
+EOD
 '
+EOF
+)
 
-# Known fatal error strings
+# Known fatal error patterns
 declare -a FATAL_ERRORS=(
     "ValueError: expected sequence of length 2 at dim 1"
     "Exception occurred during game run"
-    "RuntimeError:"
-    "An error was detected while running rl-swarm."
     "Traceback (most recent call last):"
+    "An error was detected while running rl-swarm."
+    "RuntimeError:"
 )
 
 echo "🔁 RL-Swarm Watchdog started at $(date)" >> "$LOG_FILE"

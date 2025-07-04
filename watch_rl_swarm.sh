@@ -1,70 +1,87 @@
 #!/bin/bash
+set -euo pipefail
 
+# Configuration
 SESSION="rl_swarm"
-LOG_FILE="/root/rl_watchdog.log"
+RL_SWARM_DIR="/root/rl-swarm"
 ERROR_LOG="/root/rl_swarm_error.log"
-CHECK_LOG="/root/rl-swarm/console.log"
+LOG_FILE="/root/rl_swarm_watchdog.log"
+EXPECT_SCRIPT="/tmp/test_rl_swarm.exp"
+CHECK_INTERVAL=30  # seconds
 
-RESTART_COMMAND=$(cat << 'EOF'
-sed -i 's/startup_timeout: float = *15/startup_timeout: float = 120/' ~/rl-swarm/.venv/lib/python3.12/site-packages/hivemind/p2p/p2p_daemon.py
-tmux new-session -d -s rl_swarm bash -c '
+# Logging helper
+log() {
+    echo "[$(date)] $*" | tee -a "$LOG_FILE"
+}
+
+# Only restart for these errors or missing tmux
+should_restart() {
+    if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+        log "? Tmux session '$SESSION' not found."
+        return 0
+    fi
+
+    if grep -zPo "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm\." "$ERROR_LOG" >/dev/null; then
+        log "?? Matched fatal error in $ERROR_LOG"
+        grep -zPo "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm\." "$ERROR_LOG" >> "$LOG_FILE"
+        return 0
+    fi
+
+    log "? No restart condition met."
+    return 1
+}
+
+
+# Create Expect script to auto-answer prompts
+write_expect_script() {
+    cat > "$EXPECT_SCRIPT" << 'EOF'
+#!/usr/bin/expect -f
+set timeout -1  ;# Wait indefinitely
+
 cd ~/rl-swarm
-python3 -m venv .venv
-source .venv/bin/activate
-chmod +x run_rl_swarm.sh
-expect << EOD
 spawn ./run_rl_swarm.sh
+
 expect {
-    "Would you like to push models you train in the RL swarm to the Hugging Face Hub?" {
+    -re "Would you like to push models.*Hub.*" {
         send "n\r"
         exp_continue
     }
-    "Enter the name of the model you want to use" {
+    -re "Enter the name of the model.*" {
         send "Gensyn/Qwen2.5-0.5B-Instruct\r"
+        exp_continue
     }
-    eof
+    eof {
+        exit
+    }
 }
-EOD
-'
 EOF
-)
 
-# Known fatal error patterns
-declare -a FATAL_ERRORS=(
-    "ValueError: expected sequence of length 2 at dim 1"
-    "Exception occurred during game run"
-    "Traceback (most recent call last):"
-    "An error was detected while running rl-swarm."
-    "RuntimeError:"
-)
+chmod +x /tmp/test_rl_swarm.exp
+}
+# Restart tmux with expect wrapper
+restart_rl_swarm() {
+    log "?? Restarting RL Swarm..."
 
-echo "🔁 RL-Swarm Watchdog started at $(date)" >> "$LOG_FILE"
+    # Kill existing session if any
+    tmux kill-session -t "$SESSION" 2>/dev/null || true
 
+    # Clear old error logs
+    rm -f "$ERROR_LOG"
+
+    # Start new session
+    tmux new-session -d -s "$SESSION" "cd $RL_SWARM_DIR && source .venv/bin/activate && expect $EXPECT_SCRIPT 2>> $ERROR_LOG" >> $LOG_FILE
+}
+
+# Initial startup
+log "?? RL-Swarm Watchdog started."
+write_expect_script
+restart_rl_swarm
+
+# Main loop
 while true; do
-    should_restart=false
-
-    if ! tmux has-session -t $SESSION 2>/dev/null; then
-        echo "[$(date)] ❌ Tmux session '$SESSION' not found. Will restart." >> "$LOG_FILE"
-        should_restart=true
+    sleep "$CHECK_INTERVAL"
+    if should_restart; then
+        log "?? Restart triggered."
+        restart_rl_swarm
     fi
-
-    if [ -f "$CHECK_LOG" ]; then
-        for err in "${FATAL_ERRORS[@]}"; do
-            if grep -q "$err" "$CHECK_LOG"; then
-                echo "[$(date)] 🚨 Fatal error detected: $err" >> "$LOG_FILE"
-                grep "$err" "$CHECK_LOG" >> "$ERROR_LOG"
-                should_restart=true
-                break
-            fi
-        done
-    fi
-
-    if [ "$should_restart" = true ]; then
-        tmux kill-session -t $SESSION 2>/dev/null
-        eval "$RESTART_COMMAND"
-        echo "[$(date)] 🔁 RL Swarm restarted with timeout patch." >> "$LOG_FILE"
-        sleep 30
-    fi
-
-    sleep 60
 done

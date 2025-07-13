@@ -21,15 +21,16 @@ should_restart() {
         return 0
     fi
 
-    if grep -zPo "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm\." "$ERROR_LOG" >/dev/null; then
+    if grep -qE "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG"; then
         log "?? Matched fatal error in $ERROR_LOG"
-        grep -zPo "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm\." "$ERROR_LOG" >> "$LOG_FILE"
+        grep -E "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG" >> "$LOG_FILE"
         return 0
     fi
 
     log "? No restart condition met."
     return 1
 }
+
 
 
 # Create Expect script to auto-answer prompts
@@ -68,8 +69,13 @@ restart_rl_swarm() {
     # Clear old error logs
     rm -f "$ERROR_LOG"
 
+    PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+
+    cd rl-swarm
+    sed -i 's|rewards = torch.tensor(rewards)|rewards = torch.tensor(rewards, dtype=torch.float32, device=self.model.device).view(-1, 1)|' .venv/lib/python$PYTHON_VERSION/site-packages/genrl/trainer/grpo_trainer.py
+
     # Start new session
-    tmux new-session -d -s "$SESSION" "cd $RL_SWARM_DIR && source .venv/bin/activate && expect $EXPECT_SCRIPT 2>> $ERROR_LOG" >> $LOG_FILE
+    tmux new-session -d -s "$SESSION" "cd $RL_SWARM_DIR && source .venv/bin/activate && expect $EXPECT_SCRIPT"
 }
 
 # Initial startup

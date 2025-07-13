@@ -69,13 +69,15 @@ restart_rl_swarm() {
     # Clear old error logs
     rm -f "$ERROR_LOG"
 
+    
+    # Start new session
+    tmux new-session -d -s "$SESSION" "cd $RL_SWARM_DIR && source .venv/bin/activate && expect $EXPECT_SCRIPT"
+
     PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 
     cd rl-swarm
     sed -i 's|rewards = torch.tensor(rewards)|rewards = torch.tensor(rewards, dtype=torch.float32, device=self.model.device).view(-1, 1)|' .venv/lib/python$PYTHON_VERSION/site-packages/genrl/trainer/grpo_trainer.py
 
-    # Start new session
-    tmux new-session -d -s "$SESSION" "cd $RL_SWARM_DIR && source .venv/bin/activate && expect $EXPECT_SCRIPT"
 }
 
 # Initial startup

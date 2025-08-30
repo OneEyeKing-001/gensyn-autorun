@@ -51,6 +51,10 @@ expect {
         send "Gensyn/Qwen2.5-0.5B-Instruct\r"
         exp_continue
     }
+    -re "Would you like your model to participate.*" {
+        send "y\r"
+        exp_continue
+    }
     eof {
         exit
     }
@@ -86,3 +90,4 @@ while true; do
         restart_rl_swarm
     fi
 done
+

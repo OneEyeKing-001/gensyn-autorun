@@ -21,9 +21,9 @@ should_restart() {
         return 0
     fi
 
-    if grep -qE "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG"; then
+    if grep -qE "ValueError: expected sequence of length 2 at dim 1|Resource temporarily unavailable|Exception occurred during game run.|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG"; then
         log "?? Matched fatal error in $ERROR_LOG"
-        grep -E "ValueError: expected sequence of length 2 at dim 1|Exception occurred during game run|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG" >> "$LOG_FILE"
+        grep -E "ValueError: expected sequence of length 2 at dim 1|Resource temporarily unavailable|Exception occurred during game run.|Traceback \(most recent call last\):|An error was detected while running rl-swarm" "$ERROR_LOG" >> "$LOG_FILE"
         return 0
     fi
 
@@ -90,4 +90,5 @@ while true; do
         restart_rl_swarm
     fi
 done
+
 
